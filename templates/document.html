@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+{{ css }}
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    <article class="document">
+      <header class="document-header">
+        <h1 class="document-title">{{ title }}</h1>
+        <p class="document-source">Archivo fuente: {{ filename }}</p>
+      </header>
+      <section class="markdown-body">
+{{ content }}
+      </section>
+    </article>
+  </main>
+</body>
+</html>

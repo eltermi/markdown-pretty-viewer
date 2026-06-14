@@ -1,0 +1,75 @@
+name: Build desktop apps
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            build_command: ./build_app.sh
+            artifact_name: MarkdownPrettyViewer-macOS
+            package_command: cd dist && ditto -c -k --sequesterRsrc --keepParent "Markdown Pretty Viewer.app" "MarkdownPrettyViewer-macOS.zip"
+            package_path: dist/MarkdownPrettyViewer-macOS.zip
+          - name: Windows
+            os: windows-latest
+            build_command: .\build_windows.bat
+            artifact_name: MarkdownPrettyViewer-Windows
+            package_command: Compress-Archive -Path "dist\Markdown Pretty Viewer" -DestinationPath "dist\MarkdownPrettyViewer-Windows.zip" -Force
+            package_path: dist/MarkdownPrettyViewer-Windows.zip
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build app
+        shell: bash
+        if: runner.os != 'Windows'
+        run: ${{ matrix.build_command }}
+
+      - name: Build app
+        shell: powershell
+        if: runner.os == 'Windows'
+        run: ${{ matrix.build_command }}
+
+      - name: Package artifact
+        shell: bash
+        if: runner.os != 'Windows'
+        run: ${{ matrix.package_command }}
+
+      - name: Package artifact
+        shell: powershell
+        if: runner.os == 'Windows'
+        run: ${{ matrix.package_command }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.package_path }}
+          if-no-files-found: error
+
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.package_path }}
+          generate_release_notes: true
