@@ -28,7 +28,7 @@ jobs:
 
           - os-name: Windows
             runner: windows-latest
-            build-command: build_windows.bat
+            build-command: .\\build_windows.bat
             artifact-name: MarkdownPrettyViewer-Windows
             artifact-path: dist/Markdown Pretty Viewer
 
