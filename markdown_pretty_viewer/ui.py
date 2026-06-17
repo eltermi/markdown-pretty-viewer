@@ -8,7 +8,6 @@ from typing import Optional
 from PySide6.QtCore import QRunnable, QThreadPool, Qt, QUrl, Signal, QObject
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QApplication,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -29,6 +28,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from .config import APP_NAME, LARGE_FILE_WARNING_BYTES, WINDOW_HEIGHT, WINDOW_WIDTH
 from .file_scanner import find_markdown_files
 from .markdown_renderer import RenderedDocument
+from .settings import AppSettings
 from .web_security import LocalOnlyInterceptor
 from .workers import RenderWorker
 
@@ -47,6 +47,7 @@ class MarkdownPrettyViewer(QMainWindow):
         self.current_markdown_file: Optional[Path] = None
         self.current_html = ""
         self._last_render_request: Optional[Path] = None
+        self.settings = AppSettings()
         self._pdf_state = PdfExportState()
         self._pdf_state.finished.connect(self._on_pdf_finished)
         self.thread_pool = QThreadPool.globalInstance()
@@ -54,6 +55,7 @@ class MarkdownPrettyViewer(QMainWindow):
         self._setup_web_profile()
         self._setup_ui()
         self._show_empty_state()
+        self._restore_last_session()
 
     def _setup_web_profile(self) -> None:
         self.interceptor = LocalOnlyInterceptor(self)
@@ -149,7 +151,7 @@ class MarkdownPrettyViewer(QMainWindow):
         folder = QFileDialog.getExistingDirectory(
             self,
             "Selecciona una carpeta con archivos Markdown",
-            str(self.current_folder or Path.home()),
+            str(self.current_folder or self.settings.last_markdown_folder() or Path.home()),
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
         )
         if not folder:
@@ -157,10 +159,11 @@ class MarkdownPrettyViewer(QMainWindow):
             return
 
         self.current_folder = Path(folder)
+        self.settings.set_last_markdown_folder(self.current_folder)
         self.folder_label.setText(str(self.current_folder))
         self.load_markdown_files(self.current_folder)
 
-    def load_markdown_files(self, folder: Path) -> None:
+    def load_markdown_files(self, folder: Path, preferred_file: Optional[Path] = None) -> None:
         self.file_list.clear()
         self.current_markdown_file = None
         self.current_html = ""
@@ -187,7 +190,20 @@ class MarkdownPrettyViewer(QMainWindow):
             self.file_list.addItem(item)
 
         self.statusBar().showMessage(f"{len(markdown_files)} archivo(s) Markdown encontrado(s).", 5000)
-        self.file_list.setCurrentRow(0)
+
+        preferred_file = preferred_file or self.settings.last_markdown_file()
+        selected_row = 0
+        if preferred_file:
+            try:
+                preferred_file = preferred_file.resolve()
+                for row, markdown_file in enumerate(markdown_files):
+                    if markdown_file.resolve() == preferred_file:
+                        selected_row = row
+                        break
+            except OSError:
+                selected_row = 0
+
+        self.file_list.setCurrentRow(selected_row)
 
     def on_file_selected(self) -> None:
         items = self.file_list.selectedItems()
@@ -225,6 +241,7 @@ class MarkdownPrettyViewer(QMainWindow):
             return
 
         self.current_markdown_file = path
+        self.settings.set_last_markdown_file(path)
         self.current_html = document.html
         base_url = QUrl.fromLocalFile(str(path.parent) + os.sep)
         self.web_view.setHtml(document.html, base_url)
@@ -241,18 +258,11 @@ class MarkdownPrettyViewer(QMainWindow):
             self._show_warning("No hay documento seleccionado", "Selecciona primero un archivo Markdown.")
             return
 
-        destination = QFileDialog.getExistingDirectory(
-            self,
-            "Selecciona la carpeta donde guardar el PDF",
-            str(self.current_markdown_file.parent),
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
+        pdf_path = self._get_export_path(
+            title="Guardar PDF",
+            default_suffix=".pdf",
+            file_filter="PDF (*.pdf)",
         )
-        if not destination:
-            self.statusBar().showMessage("Exportación a PDF cancelada.", 4000)
-            return
-
-        pdf_path = Path(destination) / f"{self.current_markdown_file.stem}.pdf"
-        pdf_path = self._resolve_existing_path(pdf_path, "PDF")
         if pdf_path is None:
             self.statusBar().showMessage("Exportación a PDF cancelada.", 4000)
             return
@@ -285,18 +295,11 @@ class MarkdownPrettyViewer(QMainWindow):
             self._show_warning("No hay documento seleccionado", "Selecciona primero un archivo Markdown.")
             return
 
-        destination = QFileDialog.getExistingDirectory(
-            self,
-            "Selecciona la carpeta donde guardar el HTML",
-            str(self.current_markdown_file.parent),
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
+        html_path = self._get_export_path(
+            title="Guardar HTML",
+            default_suffix=".html",
+            file_filter="HTML (*.html)",
         )
-        if not destination:
-            self.statusBar().showMessage("Exportación a HTML cancelada.", 4000)
-            return
-
-        html_path = Path(destination) / f"{self.current_markdown_file.stem}.html"
-        html_path = self._resolve_existing_path(html_path, "HTML")
         if html_path is None:
             self.statusBar().showMessage("Exportación a HTML cancelada.", 4000)
             return
@@ -307,6 +310,45 @@ class MarkdownPrettyViewer(QMainWindow):
             QMessageBox.information(self, "HTML exportado", f"HTML guardado correctamente:\n\n{html_path}")
         except Exception as exc:
             self._show_error("No se pudo escribir el HTML", str(exc))
+
+
+    def _restore_last_session(self) -> None:
+        """Load the last used Markdown folder on startup when it still exists."""
+        last_folder = self.settings.last_markdown_folder()
+        if not last_folder:
+            return
+
+        self.current_folder = last_folder
+        self.folder_label.setText(str(last_folder))
+        self.load_markdown_files(last_folder, preferred_file=self.settings.last_markdown_file())
+
+    def _get_export_path(self, title: str, default_suffix: str, file_filter: str) -> Optional[Path]:
+        if not self.current_markdown_file:
+            return None
+
+        start_folder = self.settings.last_export_folder() or self.current_markdown_file.parent
+        suggested_path = start_folder / f"{self.current_markdown_file.stem}{default_suffix}"
+
+        selected_path, _ = QFileDialog.getSaveFileName(
+            self,
+            title,
+            str(suggested_path),
+            file_filter,
+            options=QFileDialog.DontConfirmOverwrite,
+        )
+        if not selected_path:
+            return None
+
+        export_path = Path(selected_path)
+        if export_path.suffix.lower() != default_suffix:
+            export_path = export_path.with_suffix(default_suffix)
+
+        export_path = self._resolve_existing_path(export_path, default_suffix.lstrip(".").upper())
+        if export_path is None:
+            return None
+
+        self.settings.set_last_export_folder(export_path.parent)
+        return export_path
 
     def _resolve_existing_path(self, path: Path, label: str) -> Optional[Path]:
         if not path.exists():

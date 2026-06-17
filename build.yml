@@ -1,0 +1,79 @@
+name: Build Markdown Pretty Viewer
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os-name }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os-name: macOS
+            runner: macos-latest
+            build-command: ./build_app.sh
+            artifact-name: MarkdownPrettyViewer-macOS
+            artifact-path: dist/Markdown Pretty Viewer.app
+
+          - os-name: Windows
+            runner: windows-latest
+            build-command: .\\build_windows.bat
+            artifact-name: MarkdownPrettyViewer-Windows
+            artifact-path: dist/Markdown Pretty Viewer
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build application
+        run: ${{ matrix.build-command }}
+
+      - name: Zip macOS app
+        if: matrix.os-name == 'macOS'
+        run: |
+          cd dist
+          zip -r MarkdownPrettyViewer-macOS.zip "Markdown Pretty Viewer.app"
+
+      - name: Zip Windows app
+        if: matrix.os-name == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/Markdown Pretty Viewer" -DestinationPath "dist/MarkdownPrettyViewer-Windows.zip" -Force
+
+      - name: Upload macOS artifact
+        if: matrix.os-name == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarkdownPrettyViewer-macOS
+          path: dist/MarkdownPrettyViewer-macOS.zip
+
+      - name: Upload Windows artifact
+        if: matrix.os-name == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MarkdownPrettyViewer-Windows
+          path: dist/MarkdownPrettyViewer-Windows.zip
+
+      - name: Upload files to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/MarkdownPrettyViewer-macOS.zip
+            dist/MarkdownPrettyViewer-Windows.zip

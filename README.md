@@ -11,6 +11,8 @@ Está pensada para documentación técnica generada por Codex u otras herramient
 - Vista HTML interna con `QWebEngineView`.
 - Conversión Markdown → HTML completamente local.
 - Exportación del documento seleccionado a PDF.
+- Nombre editable al exportar PDF/HTML mediante diálogo nativo de guardado.
+- Recuerda la última carpeta Markdown, el último archivo abierto y la última carpeta de exportación.
 - Exportación secundaria a HTML.
 - Sin Flask.
 - Sin servidor local.
@@ -47,6 +49,7 @@ markdown-pretty-viewer/
 │   ├── main.py
 │   ├── markdown_renderer.py
 │   ├── paths.py
+│   ├── settings.py
 │   ├── ui.py
 │   ├── web_security.py
 │   └── workers.py
@@ -66,6 +69,7 @@ La app está separada en módulos sencillos:
 - `workers.py`: renderizado en segundo plano para documentos grandes.
 - `config.py`: configuración centralizada.
 - `paths.py`: rutas compatibles con desarrollo y PyInstaller.
+- `settings.py`: preferencias persistentes de usuario mediante `QSettings`.
 
 ## Requisitos
 
@@ -169,19 +173,37 @@ GitHub Actions compilará macOS y Windows, y creará una Release con los ZIP lis
 ## Uso de la aplicación
 
 1. Abre la app.
-2. Pulsa **Seleccionar carpeta**.
-3. Elige una carpeta con archivos `.md` o `.markdown`.
-4. Selecciona un archivo de la lista lateral.
-5. Revisa el documento renderizado como HTML.
-6. Pulsa **Exportar PDF**.
-7. Elige la carpeta de destino.
-8. La app generará un PDF con el mismo nombre base.
+2. La app intentará cargar automáticamente la última carpeta Markdown utilizada.
+3. Si no hay carpeta previa o quieres cambiar de proyecto, pulsa **Seleccionar carpeta**.
+4. Elige una carpeta con archivos `.md` o `.markdown`.
+5. Selecciona un archivo de la lista lateral.
+6. Revisa el documento renderizado como HTML.
+7. Pulsa **Exportar PDF**.
+8. Se abrirá un diálogo de guardado nativo con:
+   - la última carpeta de exportación utilizada,
+   - un nombre sugerido a partir del Markdown,
+   - el nombre editable antes de guardar.
+9. Guarda el PDF.
 
 Ejemplo:
 
 ```text
 migration-master-plan.md → migration-master-plan.pdf
 ```
+
+Puedes cambiar el nombre antes de guardar, por ejemplo:
+
+```text
+01 - Introducción.pdf
+02 - Arquitectura.pdf
+03 - Despliegue.pdf
+```
+
+La app recuerda:
+
+- la última carpeta Markdown utilizada,
+- el último archivo Markdown abierto,
+- la última carpeta donde exportaste PDF/HTML.
 
 Si el PDF ya existe, la app pregunta si quieres sobrescribirlo. Si eliges **No**, genera un nombre alternativo:
 
