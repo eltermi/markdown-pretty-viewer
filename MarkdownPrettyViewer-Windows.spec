@@ -11,6 +11,7 @@ latex2mathml_hiddenimports = collect_submodules("latex2mathml")
 added_files = [
     ("assets/styles.css", "assets"),
     ("assets/icon.png", "assets"),
+    ("assets/vendor/mermaid/mermaid.min.js", "assets/vendor/mermaid"),
     ("assets/icon.ico", "assets"),
     ("templates/document.html", "templates"),
 ]

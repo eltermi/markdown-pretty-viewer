@@ -361,3 +361,50 @@ git push origin v1.0.0
 ### Nota técnica sobre el empaquetado de fórmulas
 
 La conversión de LaTeX a MathML usa `latex2mathml`, que incluye datos internos como `unimathsymbols.txt`. Los archivos `.spec` de PyInstaller incluyen explícitamente esos datos mediante `collect_data_files("latex2mathml")` para que las fórmulas funcionen también dentro de la app empaquetada, no solo ejecutando `python app.py`.
+
+## Diagramas Mermaid
+
+La aplicación soporta diagramas Mermaid escritos directamente en bloques Markdown.
+
+Ejemplo:
+
+````markdown
+```mermaid
+flowchart TD
+    A[Markdown] --> B[HTML bonito]
+    B --> C[PDF]
+```
+````
+
+También puedes usar otros tipos de diagramas soportados por Mermaid, como `sequenceDiagram`, `classDiagram`, `stateDiagram`, `gantt`, `erDiagram`, etc.
+
+El renderizado se hace con una copia local de Mermaid incluida en:
+
+```text
+assets/vendor/mermaid/mermaid.min.js
+```
+
+No se carga Mermaid desde CDN y no se necesita conexión a internet.
+
+### Nota de seguridad
+
+Para renderizar Mermaid es necesario activar JavaScript en la vista HTML interna. La app mantiene bloqueado el acceso a URLs remotas mediante el interceptor local, por lo que el renderizado sigue siendo local y sin llamadas externas.
+
+### Exportación PDF
+
+La exportación a PDF espera brevemente a que Mermaid termine de renderizar los diagramas antes de imprimir el documento. Así los diagramas aparecen ya convertidos a SVG en el PDF.
+
+
+### Vista previa de documentos grandes con Mermaid
+
+La vista previa de la aplicación carga el HTML renderizado desde un archivo temporal local en lugar de usar `setHtml`, porque Mermaid se incluye como JavaScript local vendorizado y puede superar el límite interno de tamaño de las data URLs de Qt WebEngine. Esto mantiene la app offline y permite que la vista previa, la exportación HTML y la exportación PDF usen el mismo HTML renderizado.
+
+
+### Mermaid PDF export note
+
+Mermaid diagrams are rendered locally in the embedded browser before PDF export. The print stylesheet allows tall diagrams to flow naturally during Chromium PDF generation instead of forcing them to stay on a single page. This avoids blank pages or excessive downscaling for long diagrams.
+
+
+### Mermaid and PDF export
+
+PDF export prepares Mermaid SVG diagrams before printing so tall diagrams are scaled to a single printable page instead of being split awkwardly by Chromium.

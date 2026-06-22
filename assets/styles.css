@@ -170,3 +170,58 @@ kbd {
     break-inside: avoid;
   }
 }
+
+/* Mermaid diagrams ------------------------------------------------------ */
+.mermaid-wrapper {
+  margin: 1.5em 0;
+  padding: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #ffffff;
+  overflow-x: auto;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.mermaid-wrapper .mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  white-space: pre;
+}
+
+.mermaid-wrapper svg {
+  max-width: 100%;
+  height: auto;
+}
+
+@media print {
+  .mermaid-wrapper {
+    box-shadow: none;
+    overflow: hidden;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .mermaid-wrapper .mermaid {
+    display: block;
+    overflow: hidden;
+    white-space: normal;
+  }
+
+  .mermaid-wrapper svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+  }
+
+  .mpv-pdf-export .mermaid-wrapper {
+    overflow: hidden;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

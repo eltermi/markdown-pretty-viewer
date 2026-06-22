@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import html
 import os
+import tempfile
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QRunnable, QThreadPool, Qt, QUrl, Signal, QObject
+from PySide6.QtCore import QRunnable, QThreadPool, Qt, QTimer, QUrl, Signal, QObject
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -46,7 +47,9 @@ class MarkdownPrettyViewer(QMainWindow):
         self.current_folder: Optional[Path] = None
         self.current_markdown_file: Optional[Path] = None
         self.current_html = ""
+        self._preview_html_path: Optional[Path] = None
         self._last_render_request: Optional[Path] = None
+        self._pdf_print_started = False
         self.settings = AppSettings()
         self._pdf_state = PdfExportState()
         self._pdf_state.finished.connect(self._on_pdf_finished)
@@ -111,7 +114,7 @@ class MarkdownPrettyViewer(QMainWindow):
         self.web_view = QWebEngineView()
         self.web_view.setContextMenuPolicy(Qt.NoContextMenu)
         settings = self.web_view.settings()
-        settings.setAttribute(QWebEngineSettings.JavascriptEnabled, False)
+        settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
         settings.setAttribute(QWebEngineSettings.PluginsEnabled, False)
         settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, False)
         settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
@@ -146,6 +149,15 @@ class MarkdownPrettyViewer(QMainWindow):
         quit_action = QAction("Salir", self)
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
+
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        if self._preview_html_path and self._preview_html_path.exists():
+            try:
+                self._preview_html_path.unlink()
+            except OSError:
+                pass
+        super().closeEvent(event)
 
     def choose_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(
@@ -205,6 +217,13 @@ class MarkdownPrettyViewer(QMainWindow):
 
         self.file_list.setCurrentRow(selected_row)
 
+        # QListWidget does not always emit itemSelectionChanged when restoring a
+        # previous session, especially if the first row remains the current row.
+        # Trigger the first render explicitly so startup/refresh always shows the
+        # selected Markdown document instead of leaving the empty welcome page.
+        if markdown_files:
+            QTimer.singleShot(0, lambda path=markdown_files[selected_row]: self.render_markdown_file(path))
+
     def on_file_selected(self) -> None:
         items = self.file_list.selectedItems()
         if not items:
@@ -232,6 +251,38 @@ class MarkdownPrettyViewer(QMainWindow):
         worker.signals.error.connect(self._on_render_error)
         self.thread_pool.start(worker)
 
+
+    def _load_preview_html(self, html_text: str) -> None:
+        """Load preview HTML from a temporary local file.
+
+        QWebEngineView.setHtml stores large documents internally as a data URL.
+        That can fail silently once the HTML includes a vendored Mermaid bundle.
+        Loading a real local file avoids that limit and keeps relative assets
+        working through the document's own <base> tag.
+        """
+        try:
+            if self._preview_html_path and self._preview_html_path.exists():
+                try:
+                    self._preview_html_path.unlink()
+                except OSError:
+                    pass
+
+            handle = tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=".html",
+                prefix="mpv-preview-",
+                encoding="utf-8",
+                delete=False,
+            )
+            with handle:
+                handle.write(html_text)
+
+            self._preview_html_path = Path(handle.name)
+            self.web_view.load(QUrl.fromLocalFile(str(self._preview_html_path)))
+        except Exception:
+            # Last-resort fallback. Small/error pages should still load this way.
+            self.web_view.setHtml(html_text, QUrl.fromLocalFile(str(Path.home()) + os.sep))
+
     def _on_render_finished(self, path: Path, rendered: object) -> None:
         if path != self._last_render_request:
             return
@@ -243,8 +294,7 @@ class MarkdownPrettyViewer(QMainWindow):
         self.current_markdown_file = path
         self.settings.set_last_markdown_file(path)
         self.current_html = document.html
-        base_url = QUrl.fromLocalFile(str(path.parent) + os.sep)
-        self.web_view.setHtml(document.html, base_url)
+        self._load_preview_html(document.html)
         self._set_export_enabled(True)
         self.statusBar().showMessage(f"Renderizado: {path.name}", 4000)
 
@@ -268,8 +318,64 @@ class MarkdownPrettyViewer(QMainWindow):
             return
 
         self.export_pdf_button.setEnabled(False)
-        self.statusBar().showMessage("Generando PDF…")
+        self.statusBar().showMessage("Preparando documento para PDF…")
+        self._print_pdf_when_ready(pdf_path)
 
+    def _print_pdf_when_ready(self, pdf_path: Path, attempt: int = 0) -> None:
+        """Wait briefly for asynchronous renderers, such as Mermaid, before printing."""
+        page = self.web_view.page()
+        script = "Boolean(window.__MPV_MERMAID_READY === undefined || window.__MPV_MERMAID_READY)"
+
+        def handle_ready(ready: object) -> None:
+            if bool(ready) or attempt >= 50:
+                self._prepare_pdf_layout(pdf_path)
+                return
+            QTimer.singleShot(100, lambda: self._print_pdf_when_ready(pdf_path, attempt + 1))
+
+        try:
+            page.runJavaScript(script, handle_ready)
+        except Exception:
+            self._start_pdf_print(pdf_path)
+
+    def _prepare_pdf_layout(self, pdf_path: Path) -> None:
+        """Prepare the loaded page for PDF export without blocking forever.
+
+        Mermaid rendering is asynchronous. The document template exposes an
+        optional window.__MPV_PREPARE_PDF function that scales tall Mermaid SVGs
+        before printing. Some WebEngine versions can fail to call the JavaScript
+        callback, so this method has a hard timeout and prints anyway.
+        """
+        self._pdf_print_started = False
+        page = self.web_view.page()
+        script = """
+            (function () {
+                try {
+                    if (typeof window.__MPV_PREPARE_PDF === 'function') {
+                        window.__MPV_PREPARE_PDF();
+                    }
+                    return true;
+                } catch (error) {
+                    console.error('PDF preparation failed:', error);
+                    return true;
+                }
+            })();
+        """
+
+        def start_once() -> None:
+            if self._pdf_print_started:
+                return
+            self._pdf_print_started = True
+            self._start_pdf_print(pdf_path)
+
+        try:
+            page.runJavaScript(script, lambda _result: QTimer.singleShot(250, start_once))
+            QTimer.singleShot(5000, start_once)
+        except Exception:
+            start_once()
+
+
+    def _start_pdf_print(self, pdf_path: Path) -> None:
+        self.statusBar().showMessage("Generando PDF…")
         try:
             page = self.web_view.page()
             try:

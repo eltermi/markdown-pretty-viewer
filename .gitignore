@@ -1,41 +1,10 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-.Python
-
-# Virtual environments
 .venv/
-venv/
-env/
-
-# PyInstaller
 build/
 dist/
-*.spec.bak
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-Icon?
-
-# Windows
-Thumbs.db
-Desktop.ini
-
-# Logs/temp
+__pycache__/
+*.py[cod]
+*.pyo
 *.log
-*.tmp
-*.bak
-
-# IDEs
-.vscode/
+.DS_Store
 .idea/
-
-# Test/cache
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
+.vscode/

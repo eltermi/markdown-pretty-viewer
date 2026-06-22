@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title }}</title>
+  <base href="{{ base_href }}">
   <style>
 {{ css }}
   </style>
@@ -20,5 +21,118 @@
       </section>
     </article>
   </main>
+
+  <script>
+{{ mermaid_js }}
+  </script>
+  <script>
+    window.__MPV_MERMAID_READY = false;
+
+    (function () {
+      function markReady() {
+        window.__MPV_MERMAID_READY = true;
+        window.dispatchEvent(new Event("mpv-mermaid-ready"));
+      }
+
+      function markFailed(error) {
+        window.__MPV_MERMAID_READY = true;
+        window.__MPV_MERMAID_ERROR = String(error || "Unknown Mermaid rendering error");
+        console.error("Mermaid rendering failed:", error);
+      }
+
+      const mermaidBlocks = document.querySelectorAll(".mermaid");
+      if (!mermaidBlocks.length) {
+        markReady();
+        return;
+      }
+
+      if (typeof mermaid === "undefined") {
+        markFailed("mermaid.min.js was not loaded");
+        return;
+      }
+
+      try {
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: "default"
+        });
+
+        Promise.resolve(mermaid.run({ querySelector: ".mermaid" }))
+          .then(markReady)
+          .catch(markFailed);
+      } catch (error) {
+        markFailed(error);
+      }
+    })();
+  </script>
+
+  <script>
+    window.__MPV_PREPARE_PDF = function () {
+      document.documentElement.classList.add("mpv-pdf-export");
+
+      const wrappers = document.querySelectorAll(".mermaid-wrapper");
+      wrappers.forEach(function (wrapper) {
+        const svg = wrapper.querySelector("svg");
+        if (!svg) {
+          return;
+        }
+
+        let width = 0;
+        let height = 0;
+
+        try {
+          const box = svg.getBBox();
+          width = box.width || 0;
+          height = box.height || 0;
+        } catch (error) {
+          width = svg.viewBox && svg.viewBox.baseVal ? svg.viewBox.baseVal.width : 0;
+          height = svg.viewBox && svg.viewBox.baseVal ? svg.viewBox.baseVal.height : 0;
+        }
+
+        const viewBox = svg.getAttribute("viewBox");
+        if ((!width || !height) && viewBox) {
+          const parts = viewBox.split(/\s+/).map(Number);
+          if (parts.length === 4) {
+            width = parts[2];
+            height = parts[3];
+          }
+        }
+
+        if (!width || !height) {
+          const rect = svg.getBoundingClientRect();
+          width = rect.width || width;
+          height = rect.height || height;
+        }
+
+        if (!width || !height) {
+          return;
+        }
+
+        // Keep diagrams readable, but force tall Mermaid charts to fit into
+        // one printable page instead of being split by Chromium's PDF engine.
+        const maxWidth = Math.min(760, wrapper.clientWidth || 760);
+        const maxHeight = 820;
+        const scale = Math.min(1, maxWidth / width, maxHeight / height);
+        const finalWidth = Math.max(1, Math.floor(width * scale));
+        const finalHeight = Math.max(1, Math.floor(height * scale));
+
+        svg.setAttribute("width", String(finalWidth));
+        svg.setAttribute("height", String(finalHeight));
+        svg.style.width = finalWidth + "px";
+        svg.style.height = finalHeight + "px";
+        svg.style.maxWidth = "100%";
+        svg.style.display = "block";
+        svg.style.margin = "0 auto";
+
+        wrapper.style.breakInside = "avoid";
+        wrapper.style.pageBreakInside = "avoid";
+        wrapper.style.overflow = "hidden";
+      });
+
+      return true;
+    };
+  </script>
+
 </body>
 </html>
