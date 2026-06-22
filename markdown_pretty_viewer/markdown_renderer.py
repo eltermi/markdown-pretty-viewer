@@ -8,6 +8,7 @@ from pathlib import Path
 import markdown
 
 from .paths import resource_path
+from .math_renderer import render_latex_math
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ def human_title_from_path(path: Path) -> str:
 
 
 def markdown_to_body(markdown_text: str) -> str:
+    markdown_text = render_latex_math(markdown_text)
     return markdown.markdown(
         markdown_text,
         extensions=[

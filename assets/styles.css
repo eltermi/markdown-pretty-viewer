@@ -133,3 +133,40 @@ kbd {
   pre, blockquote, table, img { break-inside: avoid; }
   a { color: #1d4ed8; }
 }
+
+/* Math rendering --------------------------------------------------------- */
+.math {
+  font-family: "STIX Two Math", "Cambria Math", "Times New Roman", serif;
+}
+
+.math-block {
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+  margin: 1.35em 0;
+  padding: 0.35em 0.5em;
+}
+
+.math-inline {
+  display: inline-flex;
+  vertical-align: middle;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.math math {
+  max-width: 100%;
+}
+
+.math-fallback {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  white-space: pre-wrap;
+}
+
+@media print {
+  .math-block {
+    break-inside: avoid;
+  }
+}

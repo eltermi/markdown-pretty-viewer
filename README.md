@@ -301,6 +301,33 @@ Para uso personal/local, puedes elegir:
 
 Para distribución pública profesional habría que firmar el ejecutable con un certificado de código.
 
+
+
+## Fórmulas matemáticas / LaTeX
+
+La aplicación renderiza fórmulas matemáticas escritas en sintaxis LaTeX dentro del Markdown.
+
+Formatos soportados:
+
+```markdown
+Inline: $\alpha + \beta$
+Inline: \(\alpha + \beta\)
+
+Bloque:
+$$
+\Psi_S = \alpha|Pasta\rangle + \beta|Salmon\rangle
+$$
+
+Bloque:
+\[
+H = -\sum p_i \log p_i
+\]
+```
+
+El renderizado se hace completamente en local convirtiendo LaTeX a MathML mediante `latex2mathml`. No se carga MathJax/KaTeX desde CDN, no se necesita internet y no se abren conexiones externas.
+
+Si una expresión LaTeX no puede convertirse, la aplicación deja visible la fórmula original como fallback en lugar de eliminarla.
+
 ## Limitaciones conocidas
 
 - No es un editor Markdown.
@@ -330,3 +357,7 @@ Después, para publicar versión:
 git tag v1.0.0
 git push origin v1.0.0
 ```
+
+### Nota técnica sobre el empaquetado de fórmulas
+
+La conversión de LaTeX a MathML usa `latex2mathml`, que incluye datos internos como `unimathsymbols.txt`. Los archivos `.spec` de PyInstaller incluyen explícitamente esos datos mediante `collect_data_files("latex2mathml")` para que las fórmulas funcionen también dentro de la app empaquetada, no solo ejecutando `python app.py`.

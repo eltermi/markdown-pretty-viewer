@@ -1,8 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 project_dir = Path.cwd()
 icon_path = project_dir / "assets" / "icon.icns"
+
+latex2mathml_datas = collect_data_files("latex2mathml")
+latex2mathml_hiddenimports = collect_submodules("latex2mathml")
 
 added_files = [
     ("assets/styles.css", "assets"),
@@ -15,7 +19,7 @@ a = Analysis(
     ["app.py"],
     pathex=[str(project_dir)],
     binaries=[],
-    datas=added_files,
+    datas=added_files + latex2mathml_datas,
     hiddenimports=[
         "markdown.extensions.extra",
         "markdown.extensions.sane_lists",
@@ -23,6 +27,8 @@ a = Analysis(
         "pymdownx.tasklist",
         "pymdownx.superfences",
         "pymdownx.highlight",
+        "latex2mathml.converter",
+        *latex2mathml_hiddenimports,
     ],
     hookspath=[],
     hooksconfig={},
