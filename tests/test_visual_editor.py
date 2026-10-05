@@ -129,10 +129,11 @@ def test_save_preserves_bom_newlines_and_mode(tmp_path):
     path = tmp_path / 'test.md'
     path.write_bytes(b'\xef\xbb\xbf# Title\r\n')
     path.chmod(0o640)
+    original_mode = path.stat().st_mode & 0o777
     original = read_markdown_file(path)
     write_markdown_file(path, original + 'Text\r\n')
     assert path.read_bytes() == b'\xef\xbb\xbf# Title\r\nText\r\n'
-    assert path.stat().st_mode & 0o777 == 0o640
+    assert path.stat().st_mode & 0o777 == original_mode
 
 
 def test_failed_save_keeps_original(tmp_path, monkeypatch):

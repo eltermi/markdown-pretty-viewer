@@ -48,9 +48,9 @@ jobs:
       - name: Test visual editor
         shell: bash
         run: |
-          python -m pip install pytest
-          python -m pytest -q
-          python -c "from markdown_pretty_viewer.ui import MarkdownPrettyViewer"
+          .venv/bin/python -m pip install pytest
+          .venv/bin/python -m pytest -q
+          .venv/bin/python -c "from markdown_pretty_viewer.ui import MarkdownPrettyViewer"
 
       - name: Verify macOS build output
         shell: bash
@@ -99,9 +99,12 @@ jobs:
       - name: Test visual editor
         shell: pwsh
         run: |
-          python -m pip install pytest
-          python -m pytest -q
-          python -c "from markdown_pretty_viewer.ui import MarkdownPrettyViewer"
+          & .venv/Scripts/python.exe -m pip install pytest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .venv/Scripts/python.exe -m pytest -q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .venv/Scripts/python.exe -c "from markdown_pretty_viewer.ui import MarkdownPrettyViewer"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify Windows build output
         shell: cmd
