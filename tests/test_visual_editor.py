@@ -1,5 +1,9 @@
 import os
-os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+import sys
+# Windows offscreen does not resolve bold font variants reliably. Use the
+# native Windows Qt plugin on its hosted runner; other platforms use offscreen.
+if sys.platform != 'win32':
+    os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import pytest
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QTextCursor
