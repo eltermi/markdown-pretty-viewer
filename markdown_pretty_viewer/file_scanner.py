@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import stat
+import tempfile
 from pathlib import Path
 
 from .config import MARKDOWN_EXTENSIONS
@@ -15,16 +18,21 @@ def find_markdown_files(folder: Path) -> list[Path]:
 
 def read_markdown_file(path: Path) -> str:
     """Read Markdown text with sensible UTF-8 handling."""
-    try:
-        return path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return path.read_text(encoding="utf-8-sig")
+    return path.read_bytes().decode("utf-8")
 
 
 def write_markdown_file(path: Path, content: str) -> None:
-    """Write Markdown text back to disk as UTF-8.
-
-    Editing is always explicit: this function is only called after the user
-    presses Save (or confirms saving pending changes).
-    """
-    path.write_text(content, encoding="utf-8")
+    """Replace the file atomically so a failed write never truncates the original."""
+    target = path.resolve(strict=True)
+    mode = stat.S_IMODE(target.stat().st_mode)
+    fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
