@@ -21,7 +21,7 @@ Está pensada para documentación técnica generada por Codex u otras herramient
 - Sin cuentas de usuario.
 - Sin conexión a internet.
 - Sin APIs externas.
-- No modifica los archivos Markdown originales.
+- Permite editar manualmente el archivo Markdown seleccionado y guardarlo de forma explícita.
 
 ## Estructura del proyecto
 
@@ -178,8 +178,11 @@ GitHub Actions compilará macOS y Windows, y creará una Release con los ZIP lis
 4. Elige una carpeta con archivos `.md` o `.markdown`.
 5. Selecciona un archivo de la lista lateral.
 6. Revisa el documento renderizado como HTML.
-7. Pulsa **Exportar PDF**.
-8. Se abrirá un diálogo de guardado nativo con:
+7. Si necesitas retocarlo antes de pasarlo a Codex, pulsa **Editar Markdown**.
+8. Modifica el texto y pulsa **Guardar** (`⌘S` en macOS / `Ctrl+S` en Windows y Linux) o **Cancelar** para descartar los cambios.
+9. La vista previa se vuelve a renderizar automáticamente después de guardar.
+10. Pulsa **Exportar PDF** si quieres generar un PDF.
+11. Se abrirá un diálogo de guardado nativo con:
    - la última carpeta de exportación utilizada,
    - un nombre sugerido a partir del Markdown,
    - el nombre editable antes de guardar.
@@ -263,7 +266,7 @@ La aplicación:
 - No requiere login.
 - No crea base de datos.
 - No sincroniza información.
-- No modifica los archivos Markdown originales.
+- Solo modifica un archivo Markdown cuando el usuario entra en modo edición y guarda explícitamente los cambios.
 
 La vista HTML bloquea solicitudes de red `http`, `https`, `ftp`, `ws` y `wss`.
 
@@ -328,9 +331,20 @@ El renderizado se hace completamente en local convirtiendo LaTeX a MathML median
 
 Si una expresión LaTeX no puede convertirse, la aplicación deja visible la fórmula original como fallback en lugar de eliminarla.
 
+## Edición de Markdown
+
+La edición está pensada únicamente para hacer retoques rápidos en los `.md` antes de reutilizarlos en Codex u otras herramientas. No pretende sustituir a un editor Markdown completo.
+
+- Pulsa **Editar Markdown** para abrir el archivo seleccionado como texto Markdown.
+- Pulsa **Guardar** o usa `⌘S` / `Ctrl+S` para escribir los cambios en el mismo archivo.
+- Pulsa **Cancelar** para volver a la vista previa sin guardar.
+- Si intentas cambiar de archivo, seleccionar otra carpeta o cerrar la app con cambios pendientes, la aplicación pregunta si quieres guardar, descartar o cancelar la operación.
+- Tras guardar, la vista bonita se actualiza automáticamente.
+- El guardado se hace en UTF-8.
+
 ## Limitaciones conocidas
 
-- No es un editor Markdown.
+- El modo de edición es deliberadamente sencillo: edita el Markdown como texto, no es un editor visual/WYSIWYG.
 - No busca recursivamente en subcarpetas.
 - No descarga recursos remotos.
 - No ejecuta JavaScript del documento renderizado.
