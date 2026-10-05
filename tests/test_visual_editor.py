@@ -62,7 +62,7 @@ def test_no_edit_is_identical(editor, source):
 def test_edit_preserves_all_other_source(editor):
     editor.load_markdown(DOCUMENT)
     card = next(c for c in editor.cards if c.source.startswith('Change'))
-    assert not card.protected
+    assert not card.protected, (card.source, card.baseline)
     cursor = card.text.textCursor()
     cursor.movePosition(QTextCursor.End)
     cursor.insertText(' Added.')

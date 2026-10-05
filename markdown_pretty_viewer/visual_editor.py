@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from markdown_it import MarkdownIt
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QTextCharFormat, QTextCursor, QTextDocument, QTextListFormat, QTextFormat
+from PySide6.QtGui import QFont, QFontDatabase, QTextCharFormat, QTextCursor, QTextDocument, QTextListFormat, QTextFormat
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
                               QTextEdit, QPushButton, QComboBox, QLabel, QInputDialog)
 
@@ -97,7 +97,9 @@ class BlockCard(QWidget):
         layout.setContentsMargins(6, 4, 6, 4)
         self.text = BlockTextEdit()
         self.text.setAcceptRichText(False)
-        self.text.setFont(QFont('Sans Serif', 12))
+        font = QFontDatabase.systemFont(QFontDatabase.GeneralFont)
+        font.setPointSize(12)
+        self.text.setFont(font)
         self.text.document().setMarkdown(self.source, FEATURES)
         self.baseline = self.text.document().toMarkdown(FEATURES)
         if not self.protected:
