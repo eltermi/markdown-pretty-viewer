@@ -19,3 +19,12 @@ def read_markdown_file(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return path.read_text(encoding="utf-8-sig")
+
+
+def write_markdown_file(path: Path, content: str) -> None:
+    """Write Markdown text back to disk as UTF-8.
+
+    Editing is always explicit: this function is only called after the user
+    presses Save (or confirms saving pending changes).
+    """
+    path.write_text(content, encoding="utf-8")
