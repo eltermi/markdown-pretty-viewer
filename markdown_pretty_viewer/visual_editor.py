@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass
 
 from markdown_it import MarkdownIt
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QFontDatabase, QTextCharFormat, QTextCursor, QTextDocument, QTextListFormat, QTextFormat
+from PySide6.QtGui import QFont, QFontDatabase, QTextCharFormat, QTextCursor, QTextDocument, QTextListFormat, QTextFormat, QTextDocumentFragment
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
                               QTextEdit, QPushButton, QComboBox, QLabel, QInputDialog)
 
@@ -17,9 +18,69 @@ FEATURES = QTextDocument.MarkdownDialectGitHub | QTextDocument.MarkdownNoHTML
 def semantic_signature(source: str):
     """Compare parser structure, formatting and content, ignoring source spelling."""
     def signature(tokens):
-        return [(t.type, t.tag, t.nesting, t.content if not t.children else '',
-                 sorted((t.attrs or {}).items()), signature(t.children or [])) for t in tokens]
+        result = []
+        for t in tokens:
+            # Qt wraps long prose at a different column. CommonMark soft breaks
+            # are spaces; empty text tokens are parser artifacts, not content.
+            if t.type in {'text', 'softbreak'}:
+                content = ' ' if t.type == 'softbreak' else re.sub(r'\s+', ' ', t.content)
+                if not content:
+                    continue
+                if result and result[-1][0] == 'text':
+                    previous = result[-1]
+                    result[-1] = ('text', '', 0, re.sub(r'\s+', ' ', previous[3] + content), [], [])
+                else:
+                    result.append(('text', '', 0, content, [], []))
+            else:
+                result.append((t.type, t.tag, t.nesting, t.content if not t.children else '',
+                               sorted((t.attrs or {}).items()), signature(t.children or [])))
+        return result
     return signature(PARSER.parse(source))
+
+
+def load_visual_markdown(document, source):
+    """Keep explicit Markdown line breaks as Qt line separators, not paragraphs."""
+    marker = 'MPVLINEBREAK' + uuid.uuid4().hex
+    if any(child.type == 'hardbreak' for token in PARSER.parse(source) for child in (token.children or [])):
+        prepared = re.sub(r'(?: {2,}|\\)\r?\n', ' ' + marker + ' ', source)
+        document.setMarkdown(prepared, FEATURES)
+        while True:
+            cursor = document.find(' ' + marker + ' ')
+            if cursor.isNull():
+                break
+            cursor.insertText('\u2028')
+    else:
+        document.setMarkdown(source, FEATURES)
+
+
+def visual_markdown(document):
+    """Qt's writer drops hard breaks. Preserve them explicitly during serialization."""
+    if '\u2028' not in document.toRawText():
+        return document.toMarkdown(FEATURES)
+    # Serializing each visual line independently avoids Qt wrapping inside an
+    # emphasis delimiter immediately after a hard break in the same paragraph.
+    if document.blockCount() == 1 and document.firstBlock().textList() is None:
+        parts = []
+        start = 0
+        for line in document.toRawText().split('\u2028'):
+            cursor = QTextCursor(document)
+            cursor.setPosition(start)
+            cursor.setPosition(start + len(line.encode('utf-16-le')) // 2, QTextCursor.KeepAnchor)
+            part = QTextDocument()
+            part.setDefaultFont(document.defaultFont())
+            QTextCursor(part).insertFragment(QTextDocumentFragment(cursor))
+            parts.append(part.toMarkdown(FEATURES).strip('\n'))
+            start = cursor.selectionEnd() + 1
+        return '  \n'.join(parts) + '\n\n'
+    marker = next(chr(c) for c in range(0xe000, 0xf8ff) if chr(c) not in document.toRawText())
+    copy = document.clone()
+    while True:
+        cursor = copy.find('\u2028')
+        if cursor.isNull():
+            break
+        cursor.insertText(marker)
+    return copy.toMarkdown(FEATURES).replace(marker, '  \n')
+
 
 
 @dataclass
@@ -100,8 +161,8 @@ class BlockCard(QWidget):
         font = QFontDatabase.systemFont(QFontDatabase.GeneralFont)
         font.setPointSize(12)
         self.text.setFont(font)
-        self.text.document().setMarkdown(self.source, FEATURES)
-        self.baseline = self.text.document().toMarkdown(FEATURES)
+        load_visual_markdown(self.text.document(), self.source)
+        self.baseline = visual_markdown(self.text.document())
         if not self.protected:
             self.protected = semantic_signature(self.source) != semantic_signature(self.baseline)
         self.text.setReadOnly(self.protected)
@@ -123,7 +184,9 @@ class BlockCard(QWidget):
         self.text.setMaximumHeight(self.text.minimumHeight())
 
     def markdown(self):
-        current = self.text.document().toMarkdown(FEATURES)
+        if not self.text.document().isModified():
+            return self.source
+        current = visual_markdown(self.text.document())
         if self.protected or current == self.baseline:
             return self.source
         return current.rstrip() + '\n\n'

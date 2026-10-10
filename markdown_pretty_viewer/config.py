@@ -3,7 +3,7 @@ from __future__ import annotations
 APP_NAME = "Markdown Pretty Viewer"
 ORG_NAME = "Local Tools"
 BUNDLE_ID = "local.markdown-pretty-viewer"
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 MARKDOWN_EXTENSIONS = {".md", ".markdown"}
 

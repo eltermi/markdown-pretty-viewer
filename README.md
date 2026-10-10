@@ -331,7 +331,7 @@ El renderizado se hace completamente en local convirtiendo LaTeX a MathML median
 
 Si una expresión LaTeX no puede convertirse, la aplicación deja visible la fórmula original como fallback en lugar de eliminarla.
 
-## Edición visual (1.3.0)
+## Edición visual (1.3.1)
 
 Pulsa **Editar documento** para corregir el documento con formato, sin tener que conocer Markdown. Haz clic en un título, párrafo, elemento de lista o celda de tabla y escribe directamente.
 
@@ -347,6 +347,8 @@ Pulsa **Editar documento** para corregir el documento con formato, sin tener que
 ### Conservación del Markdown
 
 El editor usa una estructura de bloques obtenida con `markdown-it-py` y la edición de texto enriquecido nativa de Qt. No convierte el HTML del visor a Markdown ni usa un servidor, navegador externo o editor remoto.
+
+Desde 1.3.1, los ajustes automáticos de líneas largas no provocan bloqueos y los saltos de línea explícitos se conservan al editar. Esto permite corregir párrafos con campos en varias líneas, como «Proyecto», «Versión» y «Nombre».
 
 Cada bloque conserva su texto fuente original. Los bloques sin cambios se guardan literalmente; solamente se serializan los bloques modificados. Abrir y guardar sin editar no reescribe el archivo. Se conservan UTF-8, BOM y finales de línea CRLF si estaban presentes. El guardado reemplaza el archivo de forma atómica para evitar truncarlo si falla la escritura.
 

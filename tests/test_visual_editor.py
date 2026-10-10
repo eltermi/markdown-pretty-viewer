@@ -184,3 +184,36 @@ def test_extension_and_nested_code_are_protected(editor, source):
     editor.load_markdown(source)
     assert all(c.protected for c in editor.cards)
     assert editor.markdown() == source
+
+
+def test_wrapped_prose_is_same_structure():
+    assert semantic_signature('A sufficiently long **paragraph** with text.\n') == semantic_signature('A sufficiently long **paragraph**\nwith text.\n')
+    assert semantic_signature('A  \nB\n') != semantic_signature('A\nB\n')
+    assert semantic_signature('A **word**.\n') != semantic_signature('A word.\n')
+
+
+def test_metadata_name_can_be_edited_visually_with_line_breaks(editor):
+    source = ('**Proyecto:** Ejemplo  \n**Plataforma:** Televisión  \n'
+              '**Fecha:** octubre\n\n'
+              '**Versión:** un documento con una descripción suficientemente larga para que Qt la divida en varias líneas al guardarlo  \n'
+              '**Nombre:** todavía no decidido. *Primer nombre*, *Segundo nombre* y *Tercer nombre* son opciones provisionales.\n\n')
+    editor.load_markdown(source)
+    assert all(not card.protected for card in editor.cards)
+    assert editor.markdown() == source
+    card = editor.cards[-1]
+    cursor = card.text.document().find('todavía no decidido')
+    assert not cursor.isNull()
+    cursor.insertText('Nombre definitivo')
+    output = editor.markdown()
+    assert 'Nombre definitivo' in output
+    assert semantic_signature(output) == semantic_signature(source.replace('todavía no decidido', 'Nombre definitivo'))
+    assert editor.cards[0].source in output
+
+
+def test_hard_break_after_emoji(editor):
+    source = 'Texto 😀  \n**Nombre:** con *cursiva*.\n'
+    editor.load_markdown(source)
+    assert not editor.cards[0].protected
+    cursor = editor.cards[0].text.document().find('Nombre')
+    cursor.insertText('Título')
+    assert semantic_signature(editor.markdown()) == semantic_signature(source.replace('Nombre', 'Título'))
