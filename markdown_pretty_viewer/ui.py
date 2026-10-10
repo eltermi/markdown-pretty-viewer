@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QRunnable, QThreadPool, Qt, QTimer, QUrl, Signal, QObject
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSplitter,
+    QStackedWidget,
     QStatusBar,
     QVBoxLayout,
     QWidget,
@@ -27,11 +28,12 @@ from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from .config import APP_NAME, LARGE_FILE_WARNING_BYTES, WINDOW_HEIGHT, WINDOW_WIDTH
-from .file_scanner import find_markdown_files
+from .file_scanner import find_markdown_files, read_markdown_file, write_markdown_file
 from .markdown_renderer import RenderedDocument
 from .settings import AppSettings
 from .web_security import LocalOnlyInterceptor
 from .workers import RenderWorker
+from .visual_editor import VisualEditor
 
 
 class PdfExportState(QObject):
@@ -48,6 +50,7 @@ class MarkdownPrettyViewer(QMainWindow):
         self.current_markdown_file: Optional[Path] = None
         self.current_html = ""
         self._preview_html_path: Optional[Path] = None
+        self._suppress_selection_change = False
         self._last_render_request: Optional[Path] = None
         self._pdf_print_started = False
         self.settings = AppSettings()
@@ -77,6 +80,21 @@ class MarkdownPrettyViewer(QMainWindow):
         self.choose_folder_button = QPushButton("Seleccionar carpeta")
         self.choose_folder_button.clicked.connect(self.choose_folder)
         toolbar_row.addWidget(self.choose_folder_button)
+
+        self.edit_button = QPushButton("Editar documento")
+        self.edit_button.clicked.connect(self.start_editing)
+        self.edit_button.setEnabled(False)
+        toolbar_row.addWidget(self.edit_button)
+
+        self.save_button = QPushButton("Guardar")
+        self.save_button.clicked.connect(self.save_markdown)
+        self.save_button.setVisible(False)
+        toolbar_row.addWidget(self.save_button)
+
+        self.cancel_edit_button = QPushButton("Cancelar")
+        self.cancel_edit_button.clicked.connect(self.cancel_editing)
+        self.cancel_edit_button.setVisible(False)
+        toolbar_row.addWidget(self.cancel_edit_button)
 
         self.export_pdf_button = QPushButton("Exportar PDF")
         self.export_pdf_button.clicked.connect(self.export_pdf)
@@ -111,6 +129,8 @@ class MarkdownPrettyViewer(QMainWindow):
 
         splitter.addWidget(left_panel)
 
+        self.content_stack = QStackedWidget()
+
         self.web_view = QWebEngineView()
         self.web_view.setContextMenuPolicy(Qt.NoContextMenu)
         settings = self.web_view.settings()
@@ -118,7 +138,13 @@ class MarkdownPrettyViewer(QMainWindow):
         settings.setAttribute(QWebEngineSettings.PluginsEnabled, False)
         settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, False)
         settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
-        splitter.addWidget(self.web_view)
+        self.content_stack.addWidget(self.web_view)
+
+        self.editor = VisualEditor()
+        self.editor.modificationChanged.connect(self._on_editor_modification_changed)
+        self.content_stack.addWidget(self.editor)
+
+        splitter.addWidget(self.content_stack)
 
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -146,12 +172,28 @@ class MarkdownPrettyViewer(QMainWindow):
 
         file_menu.addSeparator()
 
+        edit_action = QAction("Editar documento", self)
+        edit_action.setShortcut(QKeySequence("Ctrl+E"))
+        edit_action.triggered.connect(self.start_editing)
+        file_menu.addAction(edit_action)
+
+        save_action = QAction("Guardar", self)
+        save_action.setShortcut(QKeySequence.Save)
+        save_action.triggered.connect(self.save_markdown)
+        file_menu.addAction(save_action)
+
+        file_menu.addSeparator()
+
         quit_action = QAction("Salir", self)
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
 
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
+        if not self._confirm_leave_editor():
+            event.ignore()
+            return
+
         if self._preview_html_path and self._preview_html_path.exists():
             try:
                 self._preview_html_path.unlink()
@@ -160,6 +202,9 @@ class MarkdownPrettyViewer(QMainWindow):
         super().closeEvent(event)
 
     def choose_folder(self) -> None:
+        if not self._confirm_leave_editor():
+            return
+
         folder = QFileDialog.getExistingDirectory(
             self,
             "Selecciona una carpeta con archivos Markdown",
@@ -180,6 +225,8 @@ class MarkdownPrettyViewer(QMainWindow):
         self.current_markdown_file = None
         self.current_html = ""
         self._set_export_enabled(False)
+        self._set_edit_enabled(False)
+        self._update_window_title()
 
         try:
             markdown_files = find_markdown_files(folder)
@@ -225,15 +272,28 @@ class MarkdownPrettyViewer(QMainWindow):
             QTimer.singleShot(0, lambda path=markdown_files[selected_row]: self.render_markdown_file(path))
 
     def on_file_selected(self) -> None:
+        if self._suppress_selection_change:
+            return
+
         items = self.file_list.selectedItems()
         if not items:
             return
-        self.render_markdown_file(Path(items[0].data(Qt.UserRole)))
+
+        selected_path = Path(items[0].data(Qt.UserRole))
+        if self._is_editing() and selected_path != self.current_markdown_file:
+            previous_path = self.current_markdown_file
+            if not self._confirm_leave_editor():
+                self._restore_file_selection(previous_path)
+                return
+
+        self.render_markdown_file(selected_path)
 
     def render_markdown_file(self, path: Path) -> None:
+        self._show_preview_mode()
         self.current_markdown_file = None
         self.current_html = ""
         self._set_export_enabled(False)
+        self._set_edit_enabled(False)
         self._last_render_request = path
 
         try:
@@ -296,12 +356,139 @@ class MarkdownPrettyViewer(QMainWindow):
         self.current_html = document.html
         self._load_preview_html(document.html)
         self._set_export_enabled(True)
+        self._set_edit_enabled(True)
+        self._update_window_title()
         self.statusBar().showMessage(f"Renderizado: {path.name}", 4000)
 
     def _on_render_error(self, path: Path, message: str) -> None:
         if path != self._last_render_request:
             return
         self._show_error("No se pudo renderizar el archivo", f"{path.name}\n\n{message}")
+
+    def start_editing(self) -> None:
+        if self._is_editing():
+            return
+        if not self.current_markdown_file:
+            self._show_warning("No hay documento seleccionado", "Selecciona primero un archivo Markdown.")
+            return
+
+        try:
+            markdown_text = read_markdown_file(self.current_markdown_file)
+        except Exception as exc:
+            self._show_error("No se pudo abrir el Markdown para editar", str(exc))
+            return
+
+        self.editor.load_markdown(markdown_text)
+        self.content_stack.setCurrentWidget(self.editor)
+        self.edit_button.setVisible(False)
+        self.save_button.setVisible(True)
+        self.cancel_edit_button.setVisible(True)
+        self._set_export_enabled(False)
+        self._editing_original = markdown_text
+        self.editor.setFocus()
+        self._update_window_title()
+        self.statusBar().showMessage(
+            f"Editando: {self.current_markdown_file.name}. Guarda con ⌘S/Ctrl+S.",
+            5000,
+        )
+
+    def save_markdown(self) -> bool:
+        if not self._is_editing() or not self.current_markdown_file:
+            return False
+
+        path = self.current_markdown_file
+        if self.editor.is_modified():
+            try:
+                if read_markdown_file(path) != self._editing_original:
+                    self._show_error("El archivo ha cambiado", "Otro programa ha modificado este archivo. Tus cambios siguen en el editor; no se ha sobrescrito el archivo.")
+                    return False
+                write_markdown_file(path, self.editor.markdown())
+            except Exception as exc:
+                self._show_error("No se pudo guardar el Markdown", str(exc))
+                return False
+
+        self._show_preview_mode()
+        self.statusBar().showMessage(f"Markdown guardado: {path.name}", 5000)
+        self.render_markdown_file(path)
+        return True
+
+    def cancel_editing(self) -> None:
+        if not self._is_editing():
+            return
+
+        if self.editor.is_modified():
+            response = QMessageBox.question(
+                self,
+                "Descartar cambios",
+                "Hay cambios sin guardar. ¿Quieres descartarlos?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if response != QMessageBox.Yes:
+                return
+
+        self._show_preview_mode()
+        self.statusBar().showMessage("Edición cancelada.", 4000)
+
+    def _confirm_leave_editor(self) -> bool:
+        if not self._is_editing():
+            return True
+
+        if not self.editor.is_modified():
+            self._show_preview_mode()
+            return True
+
+        response = QMessageBox.question(
+            self,
+            "Cambios sin guardar",
+            "El Markdown tiene cambios sin guardar. ¿Quieres guardarlos antes de continuar?",
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes,
+        )
+        if response == QMessageBox.Cancel:
+            return False
+        if response == QMessageBox.Yes:
+            return self.save_markdown()
+
+        self._show_preview_mode()
+        return True
+
+    def _show_preview_mode(self) -> None:
+        self.content_stack.setCurrentWidget(self.web_view)
+        self.edit_button.setVisible(True)
+        self.save_button.setVisible(False)
+        self.cancel_edit_button.setVisible(False)
+        self._set_edit_enabled(bool(self.current_markdown_file))
+        self._set_export_enabled(bool(self.current_html))
+        self._update_window_title()
+
+    def _is_editing(self) -> bool:
+        return self.content_stack.currentWidget() is self.editor
+
+    def _on_editor_modification_changed(self, _modified: bool) -> None:
+        self._update_window_title()
+
+    def _update_window_title(self) -> None:
+        if not self.current_markdown_file:
+            self.setWindowTitle(APP_NAME)
+            return
+
+        marker = " *" if self._is_editing() and self.editor.is_modified() else ""
+        self.setWindowTitle(f"{APP_NAME} — {self.current_markdown_file.name}{marker}")
+
+    def _restore_file_selection(self, path: Optional[Path]) -> None:
+        if path is None:
+            return
+
+        self._suppress_selection_change = True
+        try:
+            for row in range(self.file_list.count()):
+                item = self.file_list.item(row)
+                if Path(item.data(Qt.UserRole)) == path:
+                    self.file_list.setCurrentRow(row)
+                    break
+        finally:
+            self._suppress_selection_change = False
 
     def export_pdf(self) -> None:
         if not self.current_markdown_file or not self.current_html:
@@ -486,6 +673,9 @@ class MarkdownPrettyViewer(QMainWindow):
     def _set_export_enabled(self, enabled: bool) -> None:
         self.export_pdf_button.setEnabled(enabled)
         self.export_html_button.setEnabled(enabled)
+
+    def _set_edit_enabled(self, enabled: bool) -> None:
+        self.edit_button.setEnabled(enabled and not self._is_editing())
 
     def _show_empty_state(self) -> None:
         self._show_message_page(
